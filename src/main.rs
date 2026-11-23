@@ -3,7 +3,7 @@ mod fetch;
 mod runner;
 mod text_input;
 
-use config::{config_path, frpc_path, Auth, Config, Proxy};
+use config::{Auth, Config, Proxy, config_path, frpc_path};
 use gpui::prelude::*;
 use gpui::*;
 use runner::Runner;
@@ -44,9 +44,12 @@ impl ProxyRow {
     fn new(cx: &mut App, p: &Proxy) -> Self {
         Self {
             name: cx.new(|cx| TextInput::new(cx, p.name.clone(), "名称", false, false)),
-            local_ip: cx.new(|cx| TextInput::new(cx, p.local_ip.clone(), "127.0.0.1", false, false)),
-            local_port: cx.new(|cx| TextInput::new(cx, p.local_port.to_string(), "25565", true, false)),
-            remote_port: cx.new(|cx| TextInput::new(cx, p.remote_port.to_string(), "25565", true, false)),
+            local_ip: cx
+                .new(|cx| TextInput::new(cx, p.local_ip.clone(), "127.0.0.1", false, false)),
+            local_port: cx
+                .new(|cx| TextInput::new(cx, p.local_port.to_string(), "25565", true, false)),
+            remote_port: cx
+                .new(|cx| TextInput::new(cx, p.remote_port.to_string(), "25565", true, false)),
         }
     }
 }
@@ -56,15 +59,12 @@ impl Root {
         let cfg = Config::load();
         let show_download = !frpc_path().exists();
         Self {
-            server_addr: cx.new(|cx| {
-                TextInput::new(cx, cfg.server_addr.clone(), "服务器地址", false, true)
-            }),
-            server_port: cx.new(|cx| {
-                TextInput::new(cx, cfg.server_port.to_string(), "7000", true, false)
-            }),
-            token: cx.new(|cx| {
-                TextInput::new(cx, cfg.auth.token.clone(), "认证 token", false, true)
-            }),
+            server_addr: cx
+                .new(|cx| TextInput::new(cx, cfg.server_addr.clone(), "服务器地址", false, true)),
+            server_port: cx
+                .new(|cx| TextInput::new(cx, cfg.server_port.to_string(), "7000", true, false)),
+            token: cx
+                .new(|cx| TextInput::new(cx, cfg.auth.token.clone(), "认证 token", false, true)),
             proxies: cfg.proxies.iter().map(|p| ProxyRow::new(cx, p)).collect(),
             runner: Runner::new(),
             status: "未启动",
@@ -251,12 +251,11 @@ impl Root {
                             .flex_row()
                             .items_center()
                             .gap_2()
-                            .child(
-                                div()
-                                    .size_2()
-                                    .rounded_full()
-                                    .bg(rgb(if on { 0x22c55e } else { 0x52525b })),
-                            )
+                            .child(div().size_2().rounded_full().bg(rgb(if on {
+                                0x22c55e
+                            } else {
+                                0x52525b
+                            })))
                             .child(div().text_sm().child(p.name.clone()))
                             .child(
                                 div()
@@ -270,25 +269,23 @@ impl Root {
                             ),
                     )
                     .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .gap_2()
-                            .child(
-                                styled_button(
-                                    SharedString::from(format!("p{}", i)),
-                                    if on { "停止" } else { "启动" },
-                                    if on { 0xdc2626 } else { 0x2563eb },
-                                    true,
-                                )
-                                .on_click(cx.listener(move |this, _, _, cx| {
+                        div().flex().flex_row().gap_2().child(
+                            styled_button(
+                                SharedString::from(format!("p{}", i)),
+                                if on { "停止" } else { "启动" },
+                                if on { 0xdc2626 } else { 0x2563eb },
+                                true,
+                            )
+                            .on_click(cx.listener(
+                                move |this, _, _, cx| {
                                     if on {
                                         this.stop_one(name.clone(), cx);
                                     } else {
                                         this.start_one(name.clone(), cx);
                                     }
-                                })),
-                            ),
+                                },
+                            )),
+                        ),
                     )
             })
             .collect();
@@ -319,40 +316,26 @@ impl Root {
                                     .flex_row()
                                     .items_center()
                                     .gap_2()
-                                    .child(
-                                        div()
-                                            .size_2()
-                                            .rounded_full()
-                                            .bg(rgb(if running { 0x22c55e } else { 0x71717a })),
-                                    )
-                                    .child(
-                                        div()
-                                            .text_base()
-                                            .child(if running { "运行中" } else { "未启动" }),
-                                    ),
+                                    .child(div().size_2().rounded_full().bg(rgb(if running {
+                                        0x22c55e
+                                    } else {
+                                        0x71717a
+                                    })))
+                                    .child(div().text_base().child(if running {
+                                        "运行中"
+                                    } else {
+                                        "未启动"
+                                    })),
                             )
-                            .child(
-                                styled_button("settings", "设置", 0x3f3f46, true).on_click(
-                                    cx.listener(|this, _, _, cx| {
-                                        this.page = Page::Settings;
-                                        cx.notify();
-                                    }),
-                                ),
-                            ),
+                            .child(styled_button("settings", "设置", 0x3f3f46, true).on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    this.page = Page::Settings;
+                                    cx.notify();
+                                }),
+                            )),
                     )
-                    .child(
-                        div()
-                            .text_xs()
-                            .text_color(rgb(0x71717a))
-                            .child(server),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap_2()
-                            .children(rows),
-                    )
+                    .child(div().text_xs().text_color(rgb(0x71717a)).child(server))
+                    .child(div().flex().flex_col().gap_2().children(rows))
                     .child(
                         div()
                             .flex()
@@ -368,16 +351,11 @@ impl Root {
                             ),
                     )
                     .child(div().flex_1())
-                    .child(
-                        div()
-                                    .text_xs()
-                                    .text_color(rgb(0x52525b))
-                                    .child(if has_bin {
-                                        format!("frpc {} · {} 个在跑", fetch::VERSION, active.len())
-                                    } else {
-                                        "frpc 未安装".to_string()
-                                    }),
-                    ),
+                    .child(div().text_xs().text_color(rgb(0x52525b)).child(if has_bin {
+                        format!("frpc {} · {} 个在跑", fetch::VERSION, active.len())
+                    } else {
+                        "frpc 未安装".to_string()
+                    })),
             )
             .child(
                 div()
@@ -407,17 +385,34 @@ impl Root {
                     .gap_2()
                     .items_end()
                     .child(div().w(px(90.)).child(labelled("名称", p.name.clone())))
-                    .child(div().w(px(110.)).child(labelled("本地地址", p.local_ip.clone())))
-                    .child(div().w(px(70.)).child(labelled("本地端口", p.local_port.clone())))
-                    .child(div().w(px(70.)).child(labelled("远端端口", p.remote_port.clone())))
                     .child(
-                        styled_button(SharedString::from(format!("del{}", i)), "删", 0x3f3f46, true)
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                if i < this.proxies.len() {
-                                    this.proxies.remove(i);
-                                    cx.notify();
-                                }
-                            })),
+                        div()
+                            .w(px(110.))
+                            .child(labelled("本地地址", p.local_ip.clone())),
+                    )
+                    .child(
+                        div()
+                            .w(px(70.))
+                            .child(labelled("本地端口", p.local_port.clone())),
+                    )
+                    .child(
+                        div()
+                            .w(px(70.))
+                            .child(labelled("远端端口", p.remote_port.clone())),
+                    )
+                    .child(
+                        styled_button(
+                            SharedString::from(format!("del{}", i)),
+                            "删",
+                            0x3f3f46,
+                            true,
+                        )
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if i < this.proxies.len() {
+                                this.proxies.remove(i);
+                                cx.notify();
+                            }
+                        })),
                     )
             })
             .collect();
@@ -435,12 +430,12 @@ impl Root {
                     .items_center()
                     .gap_3()
                     .child(
-                        styled_button("back", "返回", 0x3f3f46, true).on_click(
-                            cx.listener(|this, _, _, cx| {
+                        styled_button("back", "返回", 0x3f3f46, true).on_click(cx.listener(
+                            |this, _, _, cx| {
                                 this.page = Page::Home;
                                 cx.notify();
-                            }),
-                        ),
+                            },
+                        )),
                     )
                     .child(div().text_base().child("设置")),
             )
@@ -465,9 +460,10 @@ impl Root {
                                     .gap_2()
                                     .items_end()
                                     .child(
-                                        div()
-                                            .flex_1()
-                                            .child(labelled("服务器地址", self.server_addr.clone())),
+                                        div().flex_1().child(labelled(
+                                            "服务器地址",
+                                            self.server_addr.clone(),
+                                        )),
                                     )
                                     .child(
                                         styled_button(
@@ -480,11 +476,13 @@ impl Root {
                                             0x3f3f46,
                                             true,
                                         )
-                                        .on_click(cx.listener(|this, _, _, cx| {
-                                            let addr = this.server_addr.clone();
-                                            addr.update(cx, |input, cx| input.toggle_mask(cx));
-                                            cx.notify();
-                                        })),
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| {
+                                                let addr = this.server_addr.clone();
+                                                addr.update(cx, |input, cx| input.toggle_mask(cx));
+                                                cx.notify();
+                                            }),
+                                        ),
                                     ),
                             )
                             .child(
@@ -499,7 +497,11 @@ impl Root {
                             .flex_row()
                             .gap_2()
                             .items_end()
-                            .child(div().flex_1().child(labelled("认证 token", self.token.clone())))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .child(labelled("认证 token", self.token.clone())),
+                            )
                             .child(
                                 styled_button(
                                     "eye",
@@ -511,11 +513,13 @@ impl Root {
                                     0x3f3f46,
                                     true,
                                 )
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    let token = this.token.clone();
-                                    token.update(cx, |input, cx| input.toggle_mask(cx));
-                                    cx.notify();
-                                })),
+                                .on_click(cx.listener(
+                                    |this, _, _, cx| {
+                                        let token = this.token.clone();
+                                        token.update(cx, |input, cx| input.toggle_mask(cx));
+                                        cx.notify();
+                                    },
+                                )),
                             ),
                     )
                     .child(
@@ -539,16 +543,11 @@ impl Root {
                             .p_3()
                             .rounded_md()
                             .bg(rgb(0x1f1f23))
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(rgb(0xa1a1aa))
-                                    .child(if has_bin {
-                                        format!("frpc {} 已就绪", fetch::VERSION)
-                                    } else {
-                                        "frpc 未安装".to_string()
-                                    }),
-                            )
+                            .child(div().text_xs().text_color(rgb(0xa1a1aa)).child(if has_bin {
+                                format!("frpc {} 已就绪", fetch::VERSION)
+                            } else {
+                                "frpc 未安装".to_string()
+                            }))
                             .child(
                                 styled_button(
                                     "dl",
@@ -609,15 +608,10 @@ impl Root {
                     .bg(rgb(0x27272a))
                     .w(px(360.))
                     .child(div().text_base().child("没有找到 frpc"))
-                    .child(
-                        div()
-                            .text_sm()
-                            .text_color(rgb(0xa1a1aa))
-                            .child(format!(
-                                "要从官方 GitHub 下载 v{} 吗？大约 15 MB。",
-                                fetch::VERSION
-                            )),
-                    )
+                    .child(div().text_sm().text_color(rgb(0xa1a1aa)).child(format!(
+                        "要从官方 GitHub 下载 v{} 吗？大约 15 MB。",
+                        fetch::VERSION
+                    )))
                     .child(
                         div()
                             .flex()
@@ -636,14 +630,12 @@ impl Root {
                                 )
                                 .on_click(cx.listener(|this, _, _, cx| this.download(cx))),
                             )
-                            .child(
-                                styled_button("later", "稍后", 0x3f3f46, true).on_click(
-                                    cx.listener(|this, _, _, cx| {
-                                        this.show_download = false;
-                                        cx.notify();
-                                    }),
-                                ),
-                            ),
+                            .child(styled_button("later", "稍后", 0x3f3f46, true).on_click(
+                                cx.listener(|this, _, _, cx| {
+                                    this.show_download = false;
+                                    cx.notify();
+                                }),
+                            )),
                     ),
             )
     }
@@ -682,7 +674,12 @@ fn labelled(label: &str, input: Entity<TextInput>) -> Div {
         .flex()
         .flex_col()
         .gap_1()
-        .child(div().text_xs().text_color(rgb(0x71717a)).child(label.to_string()))
+        .child(
+            div()
+                .text_xs()
+                .text_color(rgb(0x71717a))
+                .child(label.to_string()),
+        )
         .child(input)
 }
 

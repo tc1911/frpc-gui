@@ -98,7 +98,9 @@ fn set_exec(p: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perm = std::fs::metadata(p).map_err(|e| e.to_string())?.permissions();
+        let mut perm = std::fs::metadata(p)
+            .map_err(|e| e.to_string())?
+            .permissions();
         perm.set_mode(0o755);
         std::fs::set_permissions(p, perm).map_err(|e| e.to_string())?;
     }

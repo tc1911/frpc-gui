@@ -1,4 +1,4 @@
-use crate::config::{frpc_path, Config};
+use crate::config::{Config, frpc_path};
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};

@@ -67,19 +67,41 @@ impl Default for Config {
 }
 
 pub fn config_dir() -> PathBuf {
-    if let Ok(x) = std::env::var("XDG_CONFIG_HOME") {
-        PathBuf::from(x).join("frpc-gui")
-    } else {
-        home().join(".config").join("frpc-gui")
+    #[cfg(windows)]
+    {
+        exe_dir()
+    }
+    #[cfg(not(windows))]
+    {
+        if let Ok(x) = std::env::var("XDG_CONFIG_HOME") {
+            PathBuf::from(x).join("frpc-gui")
+        } else {
+            home().join(".config").join("frpc-gui")
+        }
     }
 }
 
 pub fn data_dir() -> PathBuf {
-    if let Ok(x) = std::env::var("XDG_DATA_HOME") {
-        PathBuf::from(x).join("frpc-gui")
-    } else {
-        home().join(".local").join("share").join("frpc-gui")
+    #[cfg(windows)]
+    {
+        exe_dir()
     }
+    #[cfg(not(windows))]
+    {
+        if let Ok(x) = std::env::var("XDG_DATA_HOME") {
+            PathBuf::from(x).join("frpc-gui")
+        } else {
+            home().join(".local").join("share").join("frpc-gui")
+        }
+    }
+}
+
+#[cfg(windows)]
+fn exe_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|s| s.to_path_buf()))
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 fn home() -> PathBuf {
@@ -87,12 +109,25 @@ fn home() -> PathBuf {
 }
 
 pub fn config_path() -> PathBuf {
-    config_dir().join("frpc.toml")
+    #[cfg(windows)]
+    {
+        config_dir().join("frpc.toml")
+    }
+    #[cfg(not(windows))]
+    {
+        config_dir().join("frpc.toml")
+    }
 }
 
 pub fn frpc_path() -> PathBuf {
-    let name = if cfg!(windows) { "frpc.exe" } else { "frpc" };
-    data_dir().join("bin").join(name)
+    #[cfg(windows)]
+    {
+        exe_dir().join("frpc.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        data_dir().join("bin").join("frpc")
+    }
 }
 
 impl Config {
@@ -111,7 +146,10 @@ impl Config {
     pub fn save(&self) -> std::io::Result<()> {
         let dir = config_dir();
         fs::create_dir_all(&dir)?;
-        fs::write(dir.join("frpc.toml"), toml::to_string_pretty(self).unwrap_or_default())
+        fs::write(
+            dir.join("frpc.toml"),
+            toml::to_string_pretty(self).unwrap_or_default(),
+        )
     }
 
     pub fn save_single(&self, name: &str) -> std::io::Result<PathBuf> {

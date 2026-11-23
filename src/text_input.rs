@@ -304,7 +304,6 @@ impl TextInput {
             .find_map(|(idx, _)| (idx > offset).then_some(idx))
             .unwrap_or(self.content.len())
     }
-
 }
 
 impl EntityInputHandler for TextInput {
