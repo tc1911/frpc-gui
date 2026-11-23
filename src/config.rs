@@ -55,13 +55,7 @@ impl Default for Config {
                 method: default_method(),
                 token: String::new(),
             },
-            proxies: vec![Proxy {
-                name: "mc".into(),
-                kind: default_tcp(),
-                local_ip: default_local(),
-                local_port: 25565,
-                remote_port: 25565,
-            }],
+            proxies: Vec::new(),
         }
     }
 }

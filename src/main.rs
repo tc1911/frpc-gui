@@ -414,6 +414,14 @@ impl Root {
                     )
                     .child(div().text_xs().text_color(rgb(0x71717a)).child(server))
                     .child(div().flex().flex_col().gap_2().children(rows))
+                    .when(cfg.proxies.is_empty(), |d| {
+                        d.child(
+                            div()
+                                .text_xs()
+                                .text_color(rgb(0x52525b))
+                                .child("还没有映射，去设置页加一条"),
+                        )
+                    })
                     .child(
                         div()
                             .flex()
