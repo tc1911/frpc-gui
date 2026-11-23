@@ -1,11 +1,13 @@
 use crate::TrayCmd;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::mpsc::Sender;
 use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows_sys::Win32::UI::Shell::{
     NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NOTIFYICONDATAW, Shell_NotifyIconW,
 };
+use windows_sys::Win32::System::Threading::GetCurrentProcessId;
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const WM_TRAY: u32 = WM_APP + 1;
@@ -133,6 +135,45 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
                 0
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        }
+    }
+}
+
+static MAIN_HWND: AtomicPtr<std::ffi::c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+unsafe extern "system" fn enum_proc(hwnd: HWND, _lparam: LPARAM) -> windows_sys::core::BOOL {
+    let mut pid: u32 = 0;
+    unsafe { GetWindowThreadProcessId(hwnd, &mut pid) };
+    if pid == unsafe { GetCurrentProcessId() } && unsafe { IsWindowVisible(hwnd) } != 0 {
+        MAIN_HWND.store(hwnd, Ordering::SeqCst);
+        return 0;
+    }
+    1
+}
+
+fn find_main_window() -> *mut std::ffi::c_void {
+    let cached = MAIN_HWND.load(Ordering::SeqCst);
+    if !cached.is_null() {
+        return cached;
+    }
+    unsafe { EnumWindows(Some(enum_proc), 0) };
+    MAIN_HWND.load(Ordering::SeqCst)
+}
+
+/// 把主窗口藏起来，进程和 frpc 都留着
+pub fn hide_main_window() {
+    let hwnd = find_main_window();
+    if !hwnd.is_null() {
+        unsafe { ShowWindow(hwnd, SW_HIDE) };
+    }
+}
+
+pub fn show_main_window() {
+    let hwnd = find_main_window();
+    if !hwnd.is_null() {
+        unsafe {
+            ShowWindow(hwnd, SW_SHOW);
+            SetForegroundWindow(hwnd);
         }
     }
 }

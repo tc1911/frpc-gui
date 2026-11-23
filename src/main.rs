@@ -47,20 +47,8 @@ struct Root {
     page: Page,
     saved: Config,
     dirty: bool,
-    #[cfg(any(target_os = "linux", windows))]
-    tray: TrayState,
-}
-
-#[cfg(target_os = "linux")]
-struct TrayState {
-    rx: std::sync::mpsc::Receiver<TrayCmd>,
-    _handle: Option<tray::TrayHandle>,
-}
-
-#[cfg(windows)]
-struct TrayState {
-    rx: std::sync::mpsc::Receiver<TrayCmd>,
-    _handle: Option<tray_win::TrayHandle>,
+    /// 每帧缓存，窗口关掉时落盘
+    last: Config,
 }
 
 struct ProxyRow {
@@ -88,24 +76,6 @@ impl Root {
     fn new(cx: &mut Context<Self>) -> Self {
         let cfg = Config::load();
         let show_download = !frpc_path().exists();
-        #[cfg(target_os = "linux")]
-        let tray_state = {
-            let (tx, rx) = std::sync::mpsc::channel();
-            let handle = tray::spawn(tx);
-            TrayState {
-                rx,
-                _handle: handle,
-            }
-        };
-        #[cfg(windows)]
-        let tray_state = {
-            let (tx, rx) = std::sync::mpsc::channel();
-            let handle = tray_win::spawn(tx);
-            TrayState {
-                rx,
-                _handle: handle,
-            }
-        };
         Self {
             server_addr: cx
                 .new(|cx| TextInput::new(cx, cfg.server_addr.clone(), "服务器地址", false, true)),
@@ -121,8 +91,7 @@ impl Root {
             page: Page::Home,
             saved: cfg.clone(),
             dirty: false,
-            #[cfg(any(target_os = "linux", windows))]
-            tray: tray_state,
+            last: cfg,
         }
     }
 
@@ -164,51 +133,6 @@ impl Root {
             "部分运行中"
         };
     }
-
-    #[cfg(target_os = "linux")]
-    fn pump_tray(&mut self, cx: &mut Context<Self>) {
-        while let Ok(cmd) = self.tray.rx.try_recv() {
-            match cmd {
-                TrayCmd::Show => {
-                    if let Some(h) = cx.windows().into_iter().next() {
-                        let _ = h.update(cx, |_root, window, _cx| {
-                            window.activate_window();
-                        });
-                    }
-                }
-                TrayCmd::StartAll => self.start_all(cx),
-                TrayCmd::StopAll => self.stop_all(cx),
-                TrayCmd::Quit => {
-                    cx.quit();
-                    return;
-                }
-            }
-        }
-    }
-
-    #[cfg(windows)]
-    fn pump_tray(&mut self, cx: &mut Context<Self>) {
-        while let Ok(cmd) = self.tray.rx.try_recv() {
-            match cmd {
-                TrayCmd::Show => {
-                    if let Some(h) = cx.windows().into_iter().next() {
-                        let _ = h.update(cx, |_root, window, _cx| {
-                            window.activate_window();
-                        });
-                    }
-                }
-                TrayCmd::StartAll => self.start_all(cx),
-                TrayCmd::StopAll => self.stop_all(cx),
-                TrayCmd::Quit => {
-                    cx.quit();
-                    return;
-                }
-            }
-        }
-    }
-
-    #[cfg(not(any(target_os = "linux", windows)))]
-    fn pump_tray(&mut self, _cx: &mut Context<Self>) {}
 
     fn start_one(&mut self, name: String, cx: &mut Context<Self>) {
         if !frpc_path().exists() {
@@ -275,7 +199,7 @@ impl Root {
         }
         self.downloading = true;
         self.runner.push("开始下载 frpc".into());
-        fetch::download_frpc(self.runner.log.clone(), |_| {});
+        fetch::download_frpc(runner::log_handle(), |_| {});
         cx.notify();
     }
 
@@ -786,8 +710,15 @@ fn labelled(label: &str, input: Entity<TextInput>) -> Div {
         .child(input)
 }
 
+impl Drop for Root {
+    fn drop(&mut self) {
+        let _ = self.last.save();
+    }
+}
+
 impl Render for Root {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.last = self.collect(cx);
         let body = match self.page {
             Page::Home => self.render_home(cx),
             Page::Settings => self.render_settings(cx),
@@ -808,43 +739,100 @@ impl Render for Root {
     }
 }
 
+fn open_main_window(cx: &mut App) -> Option<WindowHandle<Root>> {
+    let bounds = Bounds::centered(None, size(px(880.), px(620.)), cx);
+    let handle = cx
+        .open_window(
+            WindowOptions {
+                window_bounds: Some(WindowBounds::Windowed(bounds)),
+                ..Default::default()
+            },
+            |_, cx| cx.new(|cx| Root::new(cx)),
+        )
+        .ok()?;
+
+    #[cfg(windows)]
+    let _ = handle.update(cx, |_root, window, cx| {
+        window.on_window_should_close(cx, |_window, _cx| {
+            tray_win::hide_main_window();
+            false
+        });
+    });
+
+    let _ = handle.update(cx, |_root, _window, cx| {
+        cx.spawn(async move |this, cx| {
+            loop {
+                let alive = this
+                    .update(cx, |app, cx| {
+                        app.tick(cx);
+                        cx.notify();
+                    })
+                    .is_ok();
+                if !alive {
+                    break;
+                }
+                cx.background_executor()
+                    .timer(Duration::from_millis(600))
+                    .await;
+            }
+        })
+        .detach();
+    });
+    Some(handle)
+}
+
 fn main() {
     Application::new().run(|cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(880.), px(620.)), cx);
-        let handle = cx
-            .open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    ..Default::default()
-                },
-                |_, cx| cx.new(|cx| Root::new(cx)),
-            )
-            .expect("failed to open window");
+        let (tx, rx) = std::sync::mpsc::channel::<TrayCmd>();
 
-        let _ = handle.update(cx, |_root, window, cx| {
-            window.on_window_should_close(cx, |window, _cx| {
-                window.minimize_window();
-                false
-            });
-            cx.spawn(async move |this, cx| {
-                loop {
-                    let alive = this
-                        .update(cx, |app, cx| {
-                            app.tick(cx);
-                            app.pump_tray(cx);
-                            cx.notify();
-                        })
-                        .is_ok();
-                    if !alive {
-                        break;
-                    }
-                    cx.background_executor()
-                        .timer(Duration::from_millis(600))
-                        .await;
+        #[cfg(target_os = "linux")]
+        {
+            std::mem::forget(tray::spawn(tx));
+        }
+        #[cfg(windows)]
+        {
+            std::mem::forget(tray_win::spawn(tx));
+        }
+        #[cfg(not(any(target_os = "linux", windows)))]
+        {
+            let _ = tx;
+        }
+
+        open_main_window(cx);
+
+        cx.spawn(async move |cx: &mut AsyncApp| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(500))
+                    .await;
+                while let Ok(cmd) = rx.try_recv() {
+                    let _ = cx.update(|cx: &mut App| match cmd {
+                        TrayCmd::Show => {
+                            #[cfg(windows)]
+                            tray_win::show_main_window();
+                            #[cfg(target_os = "linux")]
+                            if let Some(handle) = cx.windows().into_iter().next() {
+                                let _ = handle.update(cx, |_root, window, _cx| {
+                                    window.activate_window();
+                                });
+                            }
+                        }
+                        TrayCmd::StartAll => {
+                            let cfg = Config::load();
+                            let mut runner = Runner::new();
+                            for p in &cfg.proxies {
+                                let _ = runner.start(&cfg, &p.name);
+                            }
+                        }
+                        TrayCmd::StopAll => {
+                            Runner::new().stop_all();
+                        }
+                        TrayCmd::Quit => cx.quit(),
+                    });
                 }
-            })
-            .detach();
-        });
+            }
+        })
+        .detach();
 
         cx.bind_keys([
             KeyBinding::new("backspace", Backspace, None),

@@ -1,7 +1,7 @@
-use crate::config::{Config, frpc_path};
+use crate::config::{frpc_path, Config};
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
 pub const MAX_LINES: usize = 400;
@@ -11,32 +11,39 @@ struct Proc {
     child: Child,
 }
 
-pub struct Runner {
-    procs: Vec<Proc>,
-    pub log: Arc<Mutex<Vec<String>>>,
+/// 进程表是全局的，界面关掉重建也不影响已经跑起来的 frpc
+static PROCS: Mutex<Vec<Proc>> = Mutex::new(Vec::new());
+static LOG: OnceLock<Arc<Mutex<Vec<String>>>> = OnceLock::new();
+
+pub fn log_handle() -> Arc<Mutex<Vec<String>>> {
+    LOG.get_or_init(|| Arc::new(Mutex::new(Vec::new()))).clone()
 }
+
+pub struct Runner;
 
 impl Runner {
     pub fn new() -> Self {
-        Self {
-            procs: Vec::new(),
-            log: Arc::new(Mutex::new(Vec::new())),
-        }
+        Runner
     }
 
-    fn reap(&mut self) {
-        self.procs
-            .retain_mut(|p| matches!(p.child.try_wait(), Ok(None)));
+    fn reap() {
+        let mut g = PROCS.lock().unwrap();
+        g.retain_mut(|p| matches!(p.child.try_wait(), Ok(None)));
     }
 
     pub fn is_running(&mut self, name: &str) -> bool {
-        self.reap();
-        self.procs.iter().any(|p| p.name == name)
+        Self::reap();
+        PROCS.lock().unwrap().iter().any(|p| p.name == name)
     }
 
     pub fn running_names(&mut self) -> Vec<String> {
-        self.reap();
-        self.procs.iter().map(|p| p.name.clone()).collect()
+        Self::reap();
+        PROCS
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|p| p.name.clone())
+            .collect()
     }
 
     pub fn start(&mut self, cfg: &Config, name: &str) -> std::io::Result<()> {
@@ -67,26 +74,25 @@ impl Runner {
             readers.push(Box::new(e));
         }
         for stream in readers {
-            let log = self.log.clone();
             let tag = name.to_string();
             thread::spawn(move || {
                 for line in BufReader::new(stream).lines().map_while(Result::ok) {
-                    push_line(&log, format!("[{tag}] {line}"));
+                    push_line(format!("[{tag}] {line}"));
                 }
             });
         }
 
-        self.procs.push(Proc {
+        PROCS.lock().unwrap().push(Proc {
             name: name.to_string(),
             child,
         });
-        push_line(&self.log, format!("[{name}] 已启动"));
+        push_line(format!("[{name}] 已启动"));
         Ok(())
     }
 
     pub fn stop(&mut self, name: &str) {
         let mut hit = false;
-        self.procs.retain_mut(|p| {
+        PROCS.lock().unwrap().retain_mut(|p| {
             if p.name != name {
                 return true;
             }
@@ -96,37 +102,33 @@ impl Runner {
             false
         });
         if hit {
-            push_line(&self.log, format!("[{name}] 已停止"));
+            push_line(format!("[{name}] 已停止"));
         }
     }
 
     pub fn stop_all(&mut self) {
-        for p in self.procs.iter_mut() {
+        let mut g = PROCS.lock().unwrap();
+        if !g.is_empty() {
+            push_line("全部已停止".into());
+        }
+        for p in g.iter_mut() {
             let _ = p.child.kill();
             let _ = p.child.wait();
         }
-        if !self.procs.is_empty() {
-            push_line(&self.log, "全部已停止".into());
-        }
-        self.procs.clear();
+        g.clear();
     }
 
     pub fn push(&self, line: String) {
-        push_line(&self.log, line);
+        push_line(line);
     }
 
     pub fn snapshot(&self) -> Vec<String> {
-        self.log.lock().unwrap().clone()
+        log_handle().lock().unwrap().clone()
     }
 }
 
-impl Drop for Runner {
-    fn drop(&mut self) {
-        self.stop_all();
-    }
-}
-
-fn push_line(log: &Arc<Mutex<Vec<String>>>, line: String) {
+fn push_line(line: String) {
+    let log = log_handle();
     let line = strip_ansi(&line);
     let mut g = log.lock().unwrap();
     if g.len() >= MAX_LINES {
