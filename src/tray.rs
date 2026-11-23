@@ -52,6 +52,15 @@ impl ksni::Tray for Tray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         vec![
             StandardItem {
+                label: "显示窗口".into(),
+                activate: Box::new(|this: &mut Self| {
+                    let _ = this.tx.send(TrayCmd::Show);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            ksni::MenuItem::Separator,
+            StandardItem {
                 label: "全部启动".into(),
                 activate: Box::new(|this: &mut Self| {
                     let _ = this.tx.send(TrayCmd::StartAll);

@@ -23,6 +23,7 @@ use text_input::{
 
 #[derive(Clone, Copy, Debug)]
 pub enum TrayCmd {
+    Show,
     StartAll,
     StopAll,
     Quit,
@@ -168,6 +169,13 @@ impl Root {
     fn pump_tray(&mut self, cx: &mut Context<Self>) {
         while let Ok(cmd) = self.tray.rx.try_recv() {
             match cmd {
+                TrayCmd::Show => {
+                    if let Some(h) = cx.windows().into_iter().next() {
+                        let _ = h.update(cx, |_root, window, _cx| {
+                            window.activate_window();
+                        });
+                    }
+                }
                 TrayCmd::StartAll => self.start_all(cx),
                 TrayCmd::StopAll => self.stop_all(cx),
                 TrayCmd::Quit => {
@@ -182,6 +190,13 @@ impl Root {
     fn pump_tray(&mut self, cx: &mut Context<Self>) {
         while let Ok(cmd) = self.tray.rx.try_recv() {
             match cmd {
+                TrayCmd::Show => {
+                    if let Some(h) = cx.windows().into_iter().next() {
+                        let _ = h.update(cx, |_root, window, _cx| {
+                            window.activate_window();
+                        });
+                    }
+                }
                 TrayCmd::StartAll => self.start_all(cx),
                 TrayCmd::StopAll => self.stop_all(cx),
                 TrayCmd::Quit => {
@@ -806,7 +821,11 @@ fn main() {
             )
             .expect("failed to open window");
 
-        let _ = handle.update(cx, |_root, _window, cx| {
+        let _ = handle.update(cx, |_root, window, cx| {
+            window.on_window_should_close(cx, |window, _cx| {
+                window.minimize_window();
+                false
+            });
             cx.spawn(async move |this, cx| {
                 loop {
                     let alive = this

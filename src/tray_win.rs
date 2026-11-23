@@ -9,6 +9,7 @@ use windows_sys::Win32::UI::Shell::{
 use windows_sys::Win32::UI::WindowsAndMessaging::*;
 
 const WM_TRAY: u32 = WM_APP + 1;
+const ID_SHOW: usize = 1000;
 const ID_START: usize = 1001;
 const ID_STOP: usize = 1002;
 const ID_QUIT: usize = 1003;
@@ -86,7 +87,9 @@ unsafe fn run() {
 unsafe fn show_menu(hwnd: HWND) {
     unsafe {
         let menu = CreatePopupMenu();
-        AppendMenuW(menu, MF_STRING, ID_START, wide("全部启动").as_ptr());
+        AppendMenuW(menu, MF_STRING, ID_SHOW, wide("显示窗口").as_ptr());
+    AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
+    AppendMenuW(menu, MF_STRING, ID_START, wide("全部启动").as_ptr());
         AppendMenuW(menu, MF_STRING, ID_STOP, wide("全部停止").as_ptr());
         AppendMenuW(menu, MF_SEPARATOR, 0, std::ptr::null());
         AppendMenuW(menu, MF_STRING, ID_QUIT, wide("退出").as_ptr());
@@ -112,7 +115,8 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             WM_COMMAND => {
                 let id = (wparam & 0xFFFF) as usize;
                 let cmd = match id {
-                    ID_START => Some(TrayCmd::StartAll),
+                    ID_SHOW => Some(TrayCmd::Show),
+                ID_START => Some(TrayCmd::StartAll),
                     ID_STOP => Some(TrayCmd::StopAll),
                     ID_QUIT => Some(TrayCmd::Quit),
                     _ => None,
