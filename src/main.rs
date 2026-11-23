@@ -3,6 +3,9 @@ mod fetch;
 mod runner;
 mod text_input;
 
+#[cfg(target_os = "linux")]
+mod tray;
+
 use config::{Auth, Config, Proxy, config_path, frpc_path};
 use gpui::prelude::*;
 use gpui::*;
@@ -31,6 +34,14 @@ struct Root {
     page: Page,
     saved: Config,
     dirty: bool,
+    #[cfg(target_os = "linux")]
+    tray: TrayState,
+}
+
+#[cfg(target_os = "linux")]
+struct TrayState {
+    rx: std::sync::mpsc::Receiver<tray::Cmd>,
+    _handle: Option<tray::TrayHandle>,
 }
 
 struct ProxyRow {
@@ -58,6 +69,15 @@ impl Root {
     fn new(cx: &mut Context<Self>) -> Self {
         let cfg = Config::load();
         let show_download = !frpc_path().exists();
+        #[cfg(target_os = "linux")]
+        let tray_state = {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let handle = tray::spawn(tx);
+            TrayState {
+                rx,
+                _handle: handle,
+            }
+        };
         Self {
             server_addr: cx
                 .new(|cx| TextInput::new(cx, cfg.server_addr.clone(), "服务器地址", false, true)),
@@ -73,6 +93,8 @@ impl Root {
             page: Page::Home,
             saved: cfg.clone(),
             dirty: false,
+            #[cfg(target_os = "linux")]
+            tray: tray_state,
         }
     }
 
@@ -114,6 +136,23 @@ impl Root {
             "部分运行中"
         };
     }
+
+    #[cfg(target_os = "linux")]
+    fn pump_tray(&mut self, cx: &mut Context<Self>) {
+        while let Ok(cmd) = self.tray.rx.try_recv() {
+            match cmd {
+                tray::Cmd::StartAll => self.start_all(cx),
+                tray::Cmd::StopAll => self.stop_all(cx),
+                tray::Cmd::Quit => {
+                    cx.quit();
+                    return;
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn pump_tray(&mut self, _cx: &mut Context<Self>) {}
 
     fn start_one(&mut self, name: String, cx: &mut Context<Self>) {
         if !frpc_path().exists() {
@@ -724,6 +763,7 @@ fn main() {
                     let alive = this
                         .update(cx, |app, cx| {
                             app.tick(cx);
+                            app.pump_tray(cx);
                             cx.notify();
                         })
                         .is_ok();
