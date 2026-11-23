@@ -658,7 +658,7 @@ impl Root {
                                         let _ = std::fs::create_dir_all(config::config_dir());
                                         let p = config_path();
                                         if !p.exists() {
-                                            let _ = Config::load();
+                                            let _ = Config::default().save();
                                         }
                                         open_path(&p);
                                     }),

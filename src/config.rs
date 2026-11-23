@@ -137,11 +137,7 @@ impl Config {
         let path = config_path();
         match fs::read_to_string(&path) {
             Ok(text) => toml::from_str(&text).unwrap_or_default(),
-            Err(_) => {
-                let cfg = Config::default();
-                let _ = cfg.save();
-                cfg
-            }
+            Err(_) => Config::default(),
         }
     }
 
