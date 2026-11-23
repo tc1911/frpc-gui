@@ -2,6 +2,7 @@
 
 mod config;
 mod daemon;
+mod exit_ui;
 mod ipc;
 mod fetch;
 mod runner;

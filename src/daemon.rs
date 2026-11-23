@@ -117,6 +117,7 @@ pub fn run() -> ! {
                 TrayCmd::StopAll => post(Job::StopAll),
                 TrayCmd::Quit => {
                     Runner::new().stop_all();
+                    crate::exit_ui::kill_ui();
                     std::process::exit(0)
                 }
             }
@@ -154,6 +155,7 @@ fn handle(stream: TcpStream) {
             }
             "QUIT" => {
                 Runner::new().stop_all();
+                crate::exit_ui::kill_ui();
                 std::process::exit(0)
             }
             other => {
