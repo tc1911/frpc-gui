@@ -51,7 +51,6 @@ struct Root {
     /// 每帧缓存，窗口关掉时落盘
     last: Config,
     online_seen: bool,
-    offline_since: Option<std::time::Instant>,
 }
 
 struct ProxyRow {
@@ -96,7 +95,6 @@ impl Root {
             dirty: false,
             last: cfg,
             online_seen: false,
-            offline_since: None,
         }
     }
 
@@ -130,17 +128,10 @@ impl Root {
         }
         self.dirty = self.collect(&*cx) != self.saved;
 
-        // 后端没了（托盘退出或被关掉）就跟它一起退
+        // 后端没了（托盘退出或被强杀）就跟它一起退，连续两次连不上才算
         if self.ipc.online() {
             self.online_seen = true;
-            self.offline_since = None;
-        } else if self.online_seen
-            && self
-                .offline_since
-                .get_or_insert_with(std::time::Instant::now)
-                .elapsed()
-                > Duration::from_secs(2)
-        {
+        } else if self.online_seen && self.ipc.misses() >= 2 {
             cx.quit();
             return;
         }

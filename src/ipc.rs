@@ -15,21 +15,25 @@ pub struct Ipc {
     state: Arc<Mutex<State>>,
     tx: Sender<String>,
     online: Arc<Mutex<bool>>,
+    misses: Arc<Mutex<u32>>,
 }
 
 impl Ipc {
     pub fn connect(port: u16) -> Self {
         let state = Arc::new(Mutex::new(State::default()));
         let online = Arc::new(Mutex::new(false));
+        let misses = Arc::new(Mutex::new(0u32));
         let (tx, rx) = channel::<String>();
 
         let s2 = state.clone();
         let o2 = online.clone();
+        let m2 = misses.clone();
         std::thread::spawn(move || {
             loop {
                 match TcpStream::connect(("127.0.0.1", port)) {
                     Ok(stream) => {
                         *o2.lock().unwrap() = true;
+                        *m2.lock().unwrap() = 0;
                         stream
                             .set_read_timeout(Some(Duration::from_millis(1200)))
                             .ok();
@@ -51,6 +55,8 @@ impl Ipc {
                     }
                     Err(_) => {
                         *o2.lock().unwrap() = false;
+                        let mut m = m2.lock().unwrap();
+                        *m = m.saturating_add(1);
                     }
                 }
 
@@ -68,6 +74,7 @@ impl Ipc {
             state,
             tx,
             online,
+            misses,
         }
     }
 
@@ -81,5 +88,9 @@ impl Ipc {
 
     pub fn online(&self) -> bool {
         *self.online.lock().unwrap()
+    }
+
+    pub fn misses(&self) -> u32 {
+        *self.misses.lock().unwrap()
     }
 }
