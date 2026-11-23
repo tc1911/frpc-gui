@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=frpc GUI
+GenericName=内网穿透客户端
+Comment=frpc 的图形前端，关界面不退后端
+Exec=frpc-gui
+Icon=frpc-gui
+Terminal=false
+Categories=Network;
+Keywords=frp;frpc;tunnel;proxy;
