@@ -118,10 +118,6 @@ impl Runner {
         g.clear();
     }
 
-    pub fn push(&self, line: String) {
-        push_line(line);
-    }
-
     pub fn snapshot(&self) -> Vec<String> {
         log_handle().lock().unwrap().clone()
     }

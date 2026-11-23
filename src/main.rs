@@ -1,6 +1,8 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod config;
+mod daemon;
+mod ipc;
 mod fetch;
 mod runner;
 mod text_input;
@@ -14,7 +16,6 @@ mod tray_win;
 use config::{Auth, Config, Proxy, config_path, frpc_path};
 use gpui::prelude::*;
 use gpui::*;
-use runner::Runner;
 use std::time::Duration;
 use text_input::{
     Backspace, Copy, Cut, Delete, End, Home, Left, Paste, Right, SelectAll, SelectLeft,
@@ -40,7 +41,7 @@ struct Root {
     server_port: Entity<TextInput>,
     token: Entity<TextInput>,
     proxies: Vec<ProxyRow>,
-    runner: Runner,
+    ipc: ipc::Ipc,
     status: &'static str,
     show_download: bool,
     downloading: bool,
@@ -84,7 +85,7 @@ impl Root {
             token: cx
                 .new(|cx| TextInput::new(cx, cfg.auth.token.clone(), "认证 token", false, true)),
             proxies: cfg.proxies.iter().map(|p| ProxyRow::new(cx, p)).collect(),
-            runner: Runner::new(),
+            ipc: ipc::Ipc::connect(daemon::PORT),
             status: "未启动",
             show_download,
             downloading: false,
@@ -121,10 +122,10 @@ impl Root {
         if self.downloading && frpc_path().exists() {
             self.downloading = false;
             self.show_download = false;
-            self.runner.push("frpc 下载完成".into());
+
         }
         self.dirty = self.collect(cx) != self.saved;
-        let running = self.runner.running_names().len();
+        let running = self.ipc.state().running.len();
         self.status = if running == 0 {
             "未启动"
         } else if running >= self.proxies.len() {
@@ -143,14 +144,12 @@ impl Root {
         let cfg = self.collect(cx);
         let _ = cfg.save();
         if cfg.server_addr.trim().is_empty() {
-            self.runner.push("服务器地址还没填".into());
+
             self.page = Page::Settings;
             cx.notify();
             return;
         }
-        if let Err(e) = self.runner.start(&cfg, &name) {
-            self.runner.push(format!("[{name}] 启动失败: {e}"));
-        }
+        self.ipc.send(format!("START {name}"));
         self.tick(cx);
         cx.notify();
     }
@@ -164,31 +163,23 @@ impl Root {
         let cfg = self.collect(cx);
         let _ = cfg.save();
         if cfg.server_addr.trim().is_empty() {
-            self.runner.push("服务器地址还没填".into());
             self.page = Page::Settings;
             cx.notify();
             return;
         }
-        let names: Vec<String> = cfg.proxies.iter().map(|p| p.name.clone()).collect();
-        self.runner
-            .push(format!("-> {}:{}", cfg.server_addr, cfg.server_port));
-        for name in names {
-            if let Err(e) = self.runner.start(&cfg, &name) {
-                self.runner.push(format!("[{name}] 启动失败: {e}"));
-            }
-        }
+        self.ipc.send("STARTALL".into());
         self.tick(cx);
         cx.notify();
     }
 
     fn stop_one(&mut self, name: String, cx: &mut Context<Self>) {
-        self.runner.stop(&name);
+        self.ipc.send(format!("STOP {name}"));
         self.tick(cx);
         cx.notify();
     }
 
     fn stop_all(&mut self, cx: &mut Context<Self>) {
-        self.runner.stop_all();
+        self.ipc.send("STOPALL".into());
         self.tick(cx);
         cx.notify();
     }
@@ -198,7 +189,6 @@ impl Root {
             return;
         }
         self.downloading = true;
-        self.runner.push("开始下载 frpc".into());
         fetch::download_frpc(runner::log_handle(), |_| {});
         cx.notify();
     }
@@ -221,9 +211,9 @@ impl Root {
             Ok(()) => {
                 self.saved = cfg;
                 self.dirty = false;
-                self.runner.push("配置已保存".into());
+    
             }
-            Err(e) => self.runner.push(format!("保存失败: {e}")),
+            Err(_) => {}
         }
         cx.notify();
     }
@@ -231,8 +221,9 @@ impl Root {
     fn render_home(&mut self, cx: &mut Context<Self>) -> Div {
         let running = self.status != "未启动";
         let has_bin = frpc_path().exists();
-        let active = self.runner.running_names();
-        let lines = self.runner.snapshot();
+        let state = self.ipc.state();
+        let active = state.running.clone();
+        let lines = state.log.clone();
         let tail: Vec<SharedString> = lines
             .iter()
             .rev()
@@ -751,14 +742,6 @@ fn open_main_window(cx: &mut App) -> Option<WindowHandle<Root>> {
         )
         .ok()?;
 
-    #[cfg(windows)]
-    let _ = handle.update(cx, |_root, window, cx| {
-        window.on_window_should_close(cx, |_window, _cx| {
-            tray_win::hide_main_window();
-            false
-        });
-    });
-
     let _ = handle.update(cx, |_root, _window, cx| {
         cx.spawn(async move |this, cx| {
             loop {
@@ -782,57 +765,27 @@ fn open_main_window(cx: &mut App) -> Option<WindowHandle<Root>> {
 }
 
 fn main() {
-    Application::new().run(|cx: &mut App| {
-        let (tx, rx) = std::sync::mpsc::channel::<TrayCmd>();
+    if std::env::args().any(|a| a == "--daemon") {
+        daemon::run();
+    }
 
-        #[cfg(target_os = "linux")]
-        {
-            std::mem::forget(tray::spawn(tx));
-        }
-        #[cfg(windows)]
-        {
-            std::mem::forget(tray_win::spawn(tx));
-        }
-        #[cfg(not(any(target_os = "linux", windows)))]
-        {
-            let _ = tx;
-        }
-
-        open_main_window(cx);
-
-        cx.spawn(async move |cx: &mut AsyncApp| {
-            loop {
-                cx.background_executor()
-                    .timer(Duration::from_millis(500))
-                    .await;
-                while let Ok(cmd) = rx.try_recv() {
-                    let _ = cx.update(|cx: &mut App| match cmd {
-                        TrayCmd::Show => {
-                            #[cfg(windows)]
-                            tray_win::show_main_window();
-                            #[cfg(target_os = "linux")]
-                            if let Some(handle) = cx.windows().into_iter().next() {
-                                let _ = handle.update(cx, |_root, window, _cx| {
-                                    window.activate_window();
-                                });
-                            }
-                        }
-                        TrayCmd::StartAll => {
-                            let cfg = Config::load();
-                            let mut runner = Runner::new();
-                            for p in &cfg.proxies {
-                                let _ = runner.start(&cfg, &p.name);
-                            }
-                        }
-                        TrayCmd::StopAll => {
-                            Runner::new().stop_all();
-                        }
-                        TrayCmd::Quit => cx.quit(),
-                    });
-                }
+    if !daemon::alive() {
+        let _ = std::process::Command::new(daemon::current_exe())
+            .arg("--daemon")
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+        for _ in 0..40 {
+            if daemon::alive() {
+                break;
             }
-        })
-        .detach();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+
+    Application::new().run(|cx: &mut App| {
+        open_main_window(cx);
 
         cx.bind_keys([
             KeyBinding::new("backspace", Backspace, None),
