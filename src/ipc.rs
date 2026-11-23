@@ -20,6 +20,7 @@ pub struct Ipc {
 
 impl Ipc {
     pub fn connect(port: u16) -> Self {
+        let key = crate::config::ipc_key();
         let state = Arc::new(Mutex::new(State::default()));
         let online = Arc::new(Mutex::new(false));
         let misses = Arc::new(Mutex::new(0u32));
@@ -44,10 +45,18 @@ impl Ipc {
                                 continue;
                             }
                         };
+                        let _ = writeln!(writer, "AUTH {key}");
                         let _ = writeln!(writer, "STATE");
                         let _ = writer.flush();
+
+                        let mut reader = BufReader::new(stream);
+                        let mut hello = String::new();
                         let mut line = String::new();
-                        if BufReader::new(stream).read_line(&mut line).is_ok() {
+                        // 第一行是鉴权结果，第二行才是状态
+                        if reader.read_line(&mut hello).is_ok()
+                            && hello.trim() == "OK"
+                            && reader.read_line(&mut line).is_ok()
+                        {
                             if let Ok(st) = serde_json::from_str::<State>(line.trim()) {
                                 *s2.lock().unwrap() = st;
                             }
@@ -62,6 +71,7 @@ impl Ipc {
 
                 while let Ok(cmd) = rx.try_recv() {
                     if let Ok(mut s) = TcpStream::connect(("127.0.0.1", port)) {
+                        let _ = writeln!(s, "AUTH {key}");
                         let _ = writeln!(s, "{cmd}");
                         let _ = s.flush();
                     }

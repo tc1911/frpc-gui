@@ -12,7 +12,6 @@ pub const PORT: u16 = 38917;
 
 #[derive(Serialize)]
 pub struct State {
-    pub config: Config,
     pub running: Vec<String>,
     pub log: Vec<String>,
 }
@@ -35,14 +34,21 @@ fn start_worker() {
             match job {
                 Job::Start(name) => {
                     let cfg = Config::load();
-                    let _ = Runner::new().start(&cfg, &name);
+                    if let Err(e) = Runner::new().start(&cfg, &name) {
+                        Runner::new().note(format!("[{name}] 启动失败: {e}"));
+                    }
                 }
                 Job::Stop(name) => Runner::new().stop(&name),
                 Job::StartAll => {
                     let cfg = Config::load();
+                    if cfg.proxies.is_empty() {
+                        Runner::new().note("没有可启动的映射".into());
+                    }
                     let mut runner = Runner::new();
                     for p in &cfg.proxies {
-                        let _ = runner.start(&cfg, &p.name);
+                        if let Err(e) = runner.start(&cfg, &p.name) {
+                            runner.note(format!("[{}] 启动失败: {e}", p.name));
+                        }
                     }
                 }
                 Job::StopAll => Runner::new().stop_all(),
@@ -79,7 +85,6 @@ fn spawn_ui() {
 fn snapshot() -> State {
     let mut runner = Runner::new();
     State {
-        config: Config::load(),
         running: runner.running_names(),
         log: runner.snapshot(),
     }
@@ -135,7 +140,28 @@ fn handle(stream: TcpStream) {
         Ok(w) => w,
         Err(_) => return,
     };
-    for line in BufReader::new(stream).lines().map_while(Result::ok) {
+    let mut reader = BufReader::new(stream);
+
+    // 第一行必须是 AUTH <口令>，本机别的进程猜不到
+    let mut first = String::new();
+    if reader.read_line(&mut first).is_err() {
+        return;
+    }
+    let want = crate::config::ipc_key();
+    let ok = first
+        .trim()
+        .strip_prefix("AUTH ")
+        .map(|k| k == want)
+        .unwrap_or(false);
+    if !ok {
+        let _ = writeln!(writer, "ERR auth");
+        let _ = writer.flush();
+        return;
+    }
+    let _ = writeln!(writer, "OK");
+    let _ = writer.flush();
+
+    for line in reader.lines().map_while(Result::ok) {
         let reply = match line.trim() {
             "STATE" => match serde_json::to_string(&snapshot()) {
                 Ok(json) => json,

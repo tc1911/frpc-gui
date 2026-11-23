@@ -57,6 +57,12 @@ impl Runner {
                 format!("frpc 不存在: {}", bin.display()),
             ));
         }
+        if !cfg.proxies.iter().any(|p| p.name == name) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("配置里没有映射 {name}"),
+            ));
+        }
         let path = cfg.save_single(name)?;
 
         let mut cmd = Command::new(&bin);
@@ -90,6 +96,7 @@ impl Runner {
                 for line in BufReader::new(stream).lines().map_while(Result::ok) {
                     push_line(format!("[{tag}] {line}"));
                 }
+                push_line(format!("[{tag}] 进程已退出"));
             });
         }
 
@@ -127,6 +134,11 @@ impl Runner {
             let _ = p.child.wait();
         }
         g.clear();
+    }
+
+    /// 往日志里记一行，界面能马上看到
+    pub fn note(&self, line: String) {
+        push_line(line);
     }
 
     pub fn snapshot(&self) -> Vec<String> {

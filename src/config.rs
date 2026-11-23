@@ -115,6 +115,43 @@ pub fn config_path() -> PathBuf {
     }
 }
 
+pub fn ipc_key_path() -> PathBuf {
+    config_dir().join("ipc.key")
+}
+
+/// 本机 IPC 的口令，首次使用时生成，之后固定
+pub fn ipc_key() -> String {
+    let path = ipc_key_path();
+    if let Ok(text) = fs::read_to_string(&path) {
+        let key = text.trim().to_string();
+        if key.len() >= 32 {
+            return key;
+        }
+    }
+
+    let mut raw = [0u8; 32];
+    if getrandom::fill(&mut raw).is_err() {
+        // 极端情况下退化成时间戳，至少不是可预测的空口令
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        raw[..16].copy_from_slice(&now.to_le_bytes());
+        raw[16..].copy_from_slice(&std::process::id().to_le_bytes());
+    }
+    let key: String = raw.iter().map(|b| format!("{b:02x}")).collect();
+
+    let dir = config_dir();
+    let _ = fs::create_dir_all(&dir);
+    let _ = fs::write(&path, &key);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+    }
+    key
+}
+
 pub fn frpc_path() -> PathBuf {
     #[cfg(windows)]
     {
