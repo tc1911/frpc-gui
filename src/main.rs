@@ -29,6 +29,8 @@ struct Root {
     show_download: bool,
     downloading: bool,
     page: Page,
+    saved: Config,
+    dirty: bool,
 }
 
 struct ProxyRow {
@@ -69,6 +71,8 @@ impl Root {
             show_download,
             downloading: false,
             page: Page::Home,
+            saved: cfg.clone(),
+            dirty: false,
         }
     }
 
@@ -94,12 +98,13 @@ impl Root {
         }
     }
 
-    fn tick(&mut self) {
+    fn tick(&mut self, cx: &App) {
         if self.downloading && frpc_path().exists() {
             self.downloading = false;
             self.show_download = false;
             self.runner.push("frpc 下载完成".into());
         }
+        self.dirty = self.collect(cx) != self.saved;
         let running = self.runner.running_names().len();
         self.status = if running == 0 {
             "未启动"
@@ -127,7 +132,7 @@ impl Root {
         if let Err(e) = self.runner.start(&cfg, &name) {
             self.runner.push(format!("[{name}] 启动失败: {e}"));
         }
-        self.tick();
+        self.tick(cx);
         cx.notify();
     }
 
@@ -153,19 +158,19 @@ impl Root {
                 self.runner.push(format!("[{name}] 启动失败: {e}"));
             }
         }
-        self.tick();
+        self.tick(cx);
         cx.notify();
     }
 
     fn stop_one(&mut self, name: String, cx: &mut Context<Self>) {
         self.runner.stop(&name);
-        self.tick();
+        self.tick(cx);
         cx.notify();
     }
 
     fn stop_all(&mut self, cx: &mut Context<Self>) {
         self.runner.stop_all();
-        self.tick();
+        self.tick(cx);
         cx.notify();
     }
 
@@ -194,7 +199,11 @@ impl Root {
     fn save(&mut self, cx: &mut Context<Self>) {
         let cfg = self.collect(cx);
         match cfg.save() {
-            Ok(()) => self.runner.push("配置已保存".into()),
+            Ok(()) => {
+                self.saved = cfg;
+                self.dirty = false;
+                self.runner.push("配置已保存".into());
+            }
             Err(e) => self.runner.push(format!("保存失败: {e}")),
         }
         cx.notify();
@@ -563,7 +572,7 @@ impl Root {
                             .gap_2()
                             .mt_2()
                             .child(
-                                styled_button("save", "保存", 0x2563eb, true)
+                                styled_button("save", "保存", 0x2563eb, self.dirty)
                                     .on_click(cx.listener(|this, _, _, cx| this.save(cx))),
                             )
                             .child(
@@ -717,7 +726,7 @@ fn main() {
                 loop {
                     let alive = this
                         .update(cx, |app, cx| {
-                            app.tick();
+                            app.tick(cx);
                             cx.notify();
                         })
                         .is_ok();

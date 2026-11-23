@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Config {
     #[serde(rename = "serverAddr")]
     pub server_addr: String,
@@ -13,7 +13,7 @@ pub struct Config {
     pub proxies: Vec<Proxy>,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Auth {
     #[serde(default = "default_method")]
     pub method: String,
@@ -21,7 +21,7 @@ pub struct Auth {
     pub token: String,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Proxy {
     pub name: String,
     #[serde(rename = "type", default = "default_tcp")]
