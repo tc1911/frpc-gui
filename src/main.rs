@@ -55,6 +55,7 @@ struct Root {
 }
 
 struct ProxyRow {
+    kind: String,
     name: Entity<TextInput>,
     local_ip: Entity<TextInput>,
     local_port: Entity<TextInput>,
@@ -64,6 +65,7 @@ struct ProxyRow {
 impl ProxyRow {
     fn new(cx: &mut App, p: &Proxy) -> Self {
         Self {
+            kind: p.kind.clone(),
             name: cx.new(|cx| TextInput::new(cx, p.name.clone(), "名称", false, false)),
             local_ip: cx
                 .new(|cx| TextInput::new(cx, p.local_ip.clone(), "127.0.0.1", false, false)),
@@ -112,7 +114,7 @@ impl Root {
                 .iter()
                 .map(|p| Proxy {
                     name: p.name.read(cx).value(),
-                    kind: "tcp".into(),
+                    kind: p.kind.clone(),
                     local_ip: p.local_ip.read(cx).value(),
                     local_port: p.local_port.read(cx).value().parse().unwrap_or(25565),
                     remote_port: p.remote_port.read(cx).value().parse().unwrap_or(25565),
@@ -281,6 +283,12 @@ impl Root {
                             .child(
                                 div()
                                     .text_xs()
+                                    .text_color(rgb(0x71717a))
+                                    .child(p.kind.to_uppercase()),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
                                     .font_family("monospace")
                                     .text_color(rgb(0xa1a1aa))
                                     .child(format!(
@@ -413,6 +421,33 @@ impl Root {
                     .flex_row()
                     .gap_2()
                     .items_end()
+                    .child(
+                        div()
+                            .w(px(56.))
+                            .child(div().flex().flex_col().gap_1().child(
+                                div()
+                                    .text_xs()
+                                    .text_color(rgb(0x71717a))
+                                    .child("类型"),
+                            ).child(
+                                styled_button(
+                                    SharedString::from(format!("k{i}")),
+                                    if p.kind == "udp" { "UDP" } else { "TCP" },
+                                    0x3f3f46,
+                                    true,
+                                )
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    if let Some(row) = this.proxies.get_mut(i) {
+                                        row.kind = if row.kind == "udp" {
+                                            "tcp".to_string()
+                                        } else {
+                                            "udp".to_string()
+                                        };
+                                        cx.notify();
+                                    }
+                                })),
+                            )),
+                    )
                     .child(div().w(px(90.)).child(labelled("名称", p.name.clone())))
                     .child(
                         div()
