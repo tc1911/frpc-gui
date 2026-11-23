@@ -59,12 +59,23 @@ impl Runner {
         }
         let path = cfg.save_single(name)?;
 
-        let mut child = Command::new(&bin)
-            .arg("-c")
+        let mut cmd = Command::new(&bin);
+        cmd.arg("-c")
             .arg(&path)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stderr(Stdio::piped());
+
+        // daemon 万一被强杀，frpc 也跟着走，免得留孤儿
+        #[cfg(target_os = "linux")]
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            cmd.pre_exec(|| {
+                libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                Ok(())
+            });
+        }
+
+        let mut child = cmd.spawn()?;
 
         let mut readers: Vec<Box<dyn Read + Send>> = Vec::new();
         if let Some(o) = child.stdout.take() {

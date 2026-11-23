@@ -5,6 +5,7 @@ use serde::Serialize;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Command, Stdio};
+use std::sync::{OnceLock, mpsc::Sender};
 
 /// 后端只监听本机回环，端口固定，绑不上就说明已经有实例
 pub const PORT: u16 = 38917;
@@ -14,6 +15,46 @@ pub struct State {
     pub config: Config,
     pub running: Vec<String>,
     pub log: Vec<String>,
+}
+
+pub enum Job {
+    Start(String),
+    Stop(String),
+    StartAll,
+    StopAll,
+}
+
+static JOB_TX: OnceLock<Sender<Job>> = OnceLock::new();
+
+fn start_worker() {
+    let (tx, rx) = std::sync::mpsc::channel::<Job>();
+    let _ = JOB_TX.set(tx);
+    // 常驻线程：frpc 都由它拉起，PDEATHSIG 才有意义
+    std::thread::spawn(move || {
+        while let Ok(job) = rx.recv() {
+            match job {
+                Job::Start(name) => {
+                    let cfg = Config::load();
+                    let _ = Runner::new().start(&cfg, &name);
+                }
+                Job::Stop(name) => Runner::new().stop(&name),
+                Job::StartAll => {
+                    let cfg = Config::load();
+                    let mut runner = Runner::new();
+                    for p in &cfg.proxies {
+                        let _ = runner.start(&cfg, &p.name);
+                    }
+                }
+                Job::StopAll => Runner::new().stop_all(),
+            }
+        }
+    });
+}
+
+fn post(job: Job) {
+    if let Some(tx) = JOB_TX.get() {
+        let _ = tx.send(job);
+    }
 }
 
 pub fn alive() -> bool {
@@ -53,6 +94,8 @@ pub fn run() -> ! {
         }
     };
 
+    start_worker();
+
     let (tx, rx) = std::sync::mpsc::channel::<TrayCmd>();
 
     #[cfg(target_os = "linux")]
@@ -70,15 +113,12 @@ pub fn run() -> ! {
         while let Ok(cmd) = rx.recv() {
             match cmd {
                 TrayCmd::Show => spawn_ui(),
-                TrayCmd::StartAll => {
-                    let cfg = Config::load();
-                    let mut runner = Runner::new();
-                    for p in &cfg.proxies {
-                        let _ = runner.start(&cfg, &p.name);
-                    }
+                TrayCmd::StartAll => post(Job::StartAll),
+                TrayCmd::StopAll => post(Job::StopAll),
+                TrayCmd::Quit => {
+                    Runner::new().stop_all();
+                    std::process::exit(0)
                 }
-                TrayCmd::StopAll => Runner::new().stop_all(),
-                TrayCmd::Quit => std::process::exit(0),
             }
         }
     });
@@ -101,34 +141,30 @@ fn handle(stream: TcpStream) {
                 Err(e) => format!("ERR {e}"),
             },
             "STARTALL" => {
-                let cfg = Config::load();
-                let mut runner = Runner::new();
-                for p in &cfg.proxies {
-                    let _ = runner.start(&cfg, &p.name);
-                }
+                post(Job::StartAll);
                 "OK".into()
             }
             "STOPALL" => {
-                Runner::new().stop_all();
+                post(Job::StopAll);
                 "OK".into()
             }
             "SHOW" => {
                 spawn_ui();
                 "OK".into()
             }
-            "QUIT" => std::process::exit(0),
+            "QUIT" => {
+                Runner::new().stop_all();
+                std::process::exit(0)
+            }
             other => {
                 let mut parts = other.splitn(2, ' ');
                 match (parts.next(), parts.next()) {
                     (Some("START"), Some(name)) => {
-                        let cfg = Config::load();
-                        match Runner::new().start(&cfg, name) {
-                            Ok(()) => "OK".into(),
-                            Err(e) => format!("ERR {e}"),
-                        }
+                        post(Job::Start(name.to_string()));
+                        "OK".into()
                     }
                     (Some("STOP"), Some(name)) => {
-                        Runner::new().stop(name);
+                        post(Job::Stop(name.to_string()));
                         "OK".into()
                     }
                     _ => "ERR unknown".into(),
