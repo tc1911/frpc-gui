@@ -50,6 +50,8 @@ struct Root {
     dirty: bool,
     /// 每帧缓存，窗口关掉时落盘
     last: Config,
+    online_seen: bool,
+    offline_since: Option<std::time::Instant>,
 }
 
 struct ProxyRow {
@@ -93,6 +95,8 @@ impl Root {
             saved: cfg.clone(),
             dirty: false,
             last: cfg,
+            online_seen: false,
+            offline_since: None,
         }
     }
 
@@ -118,13 +122,28 @@ impl Root {
         }
     }
 
-    fn tick(&mut self, cx: &App) {
+    fn tick(&mut self, cx: &mut Context<Self>) {
         if self.downloading && frpc_path().exists() {
             self.downloading = false;
             self.show_download = false;
 
         }
-        self.dirty = self.collect(cx) != self.saved;
+        self.dirty = self.collect(&*cx) != self.saved;
+
+        // 后端没了（托盘退出或被关掉）就跟它一起退
+        if self.ipc.online() {
+            self.online_seen = true;
+            self.offline_since = None;
+        } else if self.online_seen
+            && self
+                .offline_since
+                .get_or_insert_with(std::time::Instant::now)
+                .elapsed()
+                > Duration::from_secs(2)
+        {
+            cx.quit();
+            return;
+        }
         let running = self.ipc.state().running.len();
         self.status = if running == 0 {
             "未启动"

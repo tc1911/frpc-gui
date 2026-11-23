@@ -14,7 +14,6 @@ pub struct State {
 pub struct Ipc {
     state: Arc<Mutex<State>>,
     tx: Sender<String>,
-    #[allow(dead_code)]
     online: Arc<Mutex<bool>>,
 }
 
@@ -80,7 +79,6 @@ impl Ipc {
         self.state.lock().unwrap().clone()
     }
 
-    #[allow(dead_code)]
     pub fn online(&self) -> bool {
         *self.online.lock().unwrap()
     }
