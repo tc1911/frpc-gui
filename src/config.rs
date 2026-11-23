@@ -113,4 +113,24 @@ impl Config {
         fs::create_dir_all(&dir)?;
         fs::write(dir.join("frpc.toml"), toml::to_string_pretty(self).unwrap_or_default())
     }
+
+    pub fn save_single(&self, name: &str) -> std::io::Result<PathBuf> {
+        let dir = config_dir().join("proxies");
+        fs::create_dir_all(&dir)?;
+        let safe: String = name
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let mut one = self.clone();
+        one.proxies.retain(|p| p.name == name);
+        let path = dir.join(format!("{safe}.toml"));
+        fs::write(&path, toml::to_string_pretty(&one).unwrap_or_default())?;
+        Ok(path)
+    }
 }

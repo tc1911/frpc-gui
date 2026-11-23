@@ -100,14 +100,17 @@ impl Root {
             self.show_download = false;
             self.runner.push("frpc 下载完成".into());
         }
-        self.status = if self.runner.running() {
-            "运行中"
-        } else {
+        let running = self.runner.running_names().len();
+        self.status = if running == 0 {
             "未启动"
+        } else if running >= self.proxies.len() {
+            "全部运行中"
+        } else {
+            "部分运行中"
         };
     }
 
-    fn start(&mut self, cx: &mut Context<Self>) {
+    fn start_one(&mut self, name: String, cx: &mut Context<Self>) {
         if !frpc_path().exists() {
             self.show_download = true;
             cx.notify();
@@ -121,18 +124,47 @@ impl Root {
             cx.notify();
             return;
         }
-        match self.runner.start(&config_path()) {
-            Ok(()) => self
-                .runner
-                .push(format!("-> {}:{}", cfg.server_addr, cfg.server_port)),
-            Err(e) => self.runner.push(format!("启动失败: {e}")),
+        if let Err(e) = self.runner.start(&cfg, &name) {
+            self.runner.push(format!("[{name}] 启动失败: {e}"));
         }
         self.tick();
         cx.notify();
     }
 
-    fn stop(&mut self, cx: &mut Context<Self>) {
-        self.runner.stop();
+    fn start_all(&mut self, cx: &mut Context<Self>) {
+        if !frpc_path().exists() {
+            self.show_download = true;
+            cx.notify();
+            return;
+        }
+        let cfg = self.collect(cx);
+        let _ = cfg.save();
+        if cfg.server_addr.trim().is_empty() {
+            self.runner.push("服务器地址还没填".into());
+            self.page = Page::Settings;
+            cx.notify();
+            return;
+        }
+        let names: Vec<String> = cfg.proxies.iter().map(|p| p.name.clone()).collect();
+        self.runner
+            .push(format!("-> {}:{}", cfg.server_addr, cfg.server_port));
+        for name in names {
+            if let Err(e) = self.runner.start(&cfg, &name) {
+                self.runner.push(format!("[{name}] 启动失败: {e}"));
+            }
+        }
+        self.tick();
+        cx.notify();
+    }
+
+    fn stop_one(&mut self, name: String, cx: &mut Context<Self>) {
+        self.runner.stop(&name);
+        self.tick();
+        cx.notify();
+    }
+
+    fn stop_all(&mut self, cx: &mut Context<Self>) {
+        self.runner.stop_all();
         self.tick();
         cx.notify();
     }
@@ -169,8 +201,9 @@ impl Root {
     }
 
     fn render_home(&mut self, cx: &mut Context<Self>) -> Div {
-        let running = self.status == "运行中";
+        let running = self.status != "未启动";
         let has_bin = frpc_path().exists();
+        let active = self.runner.running_names();
         let lines = self.runner.snapshot();
         let tail: Vec<SharedString> = lines
             .iter()
@@ -190,7 +223,10 @@ impl Root {
         let rows: Vec<Div> = cfg
             .proxies
             .iter()
-            .map(|p| {
+            .enumerate()
+            .map(|(i, p)| {
+                let on = active.iter().any(|n| n == &p.name);
+                let name = p.name.clone();
                 div()
                     .flex()
                     .flex_row()
@@ -200,16 +236,50 @@ impl Root {
                     .py_2()
                     .rounded_md()
                     .bg(rgb(0x27272a))
-                    .child(div().text_sm().child(p.name.clone()))
                     .child(
                         div()
-                            .text_xs()
-                            .font_family("monospace")
-                            .text_color(rgb(0xa1a1aa))
-                            .child(format!(
-                                "{}:{}  ->  {}",
-                                p.local_ip, p.local_port, p.remote_port
-                            )),
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .size_2()
+                                    .rounded_full()
+                                    .bg(rgb(if on { 0x22c55e } else { 0x52525b })),
+                            )
+                            .child(div().text_sm().child(p.name.clone()))
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .font_family("monospace")
+                                    .text_color(rgb(0xa1a1aa))
+                                    .child(format!(
+                                        "{}:{}  ->  {}",
+                                        p.local_ip, p.local_port, p.remote_port
+                                    )),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_2()
+                            .child(
+                                styled_button(
+                                    SharedString::from(format!("p{}", i)),
+                                    if on { "停止" } else { "启动" },
+                                    if on { 0xdc2626 } else { 0x2563eb },
+                                    true,
+                                )
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    if on {
+                                        this.stop_one(name.clone(), cx);
+                                    } else {
+                                        this.start_one(name.clone(), cx);
+                                    }
+                                })),
+                            ),
                     )
             })
             .collect();
@@ -280,24 +350,24 @@ impl Root {
                             .flex_row()
                             .gap_2()
                             .child(
-                                styled_button("start", "启动", 0x2563eb, !running && has_bin)
-                                    .on_click(cx.listener(|this, _, _, cx| this.start(cx))),
+                                styled_button("start", "全部启动", 0x2563eb, !running)
+                                    .on_click(cx.listener(|this, _, _, cx| this.start_all(cx))),
                             )
                             .child(
-                                styled_button("stop", "停止", 0xdc2626, running)
-                                    .on_click(cx.listener(|this, _, _, cx| this.stop(cx))),
+                                styled_button("stop", "全部停止", 0xdc2626, running)
+                                    .on_click(cx.listener(|this, _, _, cx| this.stop_all(cx))),
                             ),
                     )
                     .child(div().flex_1())
                     .child(
                         div()
-                            .text_xs()
-                            .text_color(rgb(0x52525b))
-                            .child(if has_bin {
-                                format!("frpc {}", fetch::VERSION)
-                            } else {
-                                "frpc 未安装".to_string()
-                            }),
+                                    .text_xs()
+                                    .text_color(rgb(0x52525b))
+                                    .child(if has_bin {
+                                        format!("frpc {} · {} 个在跑", fetch::VERSION, active.len())
+                                    } else {
+                                        "frpc 未安装".to_string()
+                                    }),
                     ),
             )
             .child(
