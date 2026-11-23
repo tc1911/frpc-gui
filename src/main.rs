@@ -41,10 +41,10 @@ struct ProxyRow {
 impl ProxyRow {
     fn new(cx: &mut App, p: &Proxy) -> Self {
         Self {
-            name: cx.new(|cx| TextInput::new(cx, p.name.clone(), "名称", false)),
-            local_ip: cx.new(|cx| TextInput::new(cx, p.local_ip.clone(), "127.0.0.1", false)),
-            local_port: cx.new(|cx| TextInput::new(cx, p.local_port.to_string(), "25565", true)),
-            remote_port: cx.new(|cx| TextInput::new(cx, p.remote_port.to_string(), "25565", true)),
+            name: cx.new(|cx| TextInput::new(cx, p.name.clone(), "名称", false, false)),
+            local_ip: cx.new(|cx| TextInput::new(cx, p.local_ip.clone(), "127.0.0.1", false, false)),
+            local_port: cx.new(|cx| TextInput::new(cx, p.local_port.to_string(), "25565", true, false)),
+            remote_port: cx.new(|cx| TextInput::new(cx, p.remote_port.to_string(), "25565", true, false)),
         }
     }
 }
@@ -54,9 +54,15 @@ impl Root {
         let cfg = Config::load();
         let show_download = !frpc_path().exists();
         Self {
-            server_addr: cx.new(|cx| TextInput::new(cx, cfg.server_addr.clone(), "服务器地址", false)),
-            server_port: cx.new(|cx| TextInput::new(cx, cfg.server_port.to_string(), "7000", true)),
-            token: cx.new(|cx| TextInput::new(cx, cfg.auth.token.clone(), "认证 token", false)),
+            server_addr: cx.new(|cx| {
+                TextInput::new(cx, cfg.server_addr.clone(), "服务器地址", false, false)
+            }),
+            server_port: cx.new(|cx| {
+                TextInput::new(cx, cfg.server_port.to_string(), "7000", true, false)
+            }),
+            token: cx.new(|cx| {
+                TextInput::new(cx, cfg.auth.token.clone(), "认证 token", false, true)
+            }),
             proxies: cfg.proxies.iter().map(|p| ProxyRow::new(cx, p)).collect(),
             runner: Runner::new(),
             status: "未启动",
@@ -383,7 +389,31 @@ impl Root {
                                     .child(labelled("端口", self.server_port.clone())),
                             ),
                     )
-                    .child(labelled("认证 token", self.token.clone()))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .gap_2()
+                            .items_end()
+                            .child(div().flex_1().child(labelled("认证 token", self.token.clone())))
+                            .child(
+                                styled_button(
+                                    "eye",
+                                    if self.token.read(cx).masked {
+                                        "显示"
+                                    } else {
+                                        "隐藏"
+                                    },
+                                    0x3f3f46,
+                                    true,
+                                )
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    let token = this.token.clone();
+                                    token.update(cx, |input, cx| input.toggle_mask(cx));
+                                    cx.notify();
+                                })),
+                            ),
+                    )
                     .child(
                         div()
                             .mt_2()

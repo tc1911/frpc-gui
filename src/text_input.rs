@@ -39,6 +39,7 @@ pub struct TextInput {
     pub last_bounds: Option<Bounds<Pixels>>,
     pub is_selecting: bool,
     pub numeric: bool,
+    pub masked: bool,
 }
 
 impl TextInput {
@@ -47,6 +48,7 @@ impl TextInput {
         initial: impl Into<SharedString>,
         placeholder: impl Into<SharedString>,
         numeric: bool,
+        masked: bool,
     ) -> Self {
         let content: SharedString = initial.into();
         let len = content.len();
@@ -61,7 +63,13 @@ impl TextInput {
             last_bounds: None,
             is_selecting: false,
             numeric,
+            masked,
         }
+    }
+
+    pub fn toggle_mask(&mut self, cx: &mut Context<Self>) {
+        self.masked = !self.masked;
+        cx.notify();
     }
 
     pub fn value(&self) -> String {
@@ -215,7 +223,20 @@ impl TextInput {
         if position.y > bounds.bottom() {
             return self.content.len();
         }
-        line.closest_index_for_x(position.x - bounds.left())
+        let display_idx = line.closest_index_for_x(position.x - bounds.left());
+        self.unmask_index(display_idx)
+    }
+
+    fn unmask_index(&self, display_idx: usize) -> usize {
+        if !self.masked {
+            return display_idx;
+        }
+        let chars = display_idx / '•'.len_utf8();
+        self.content
+            .char_indices()
+            .nth(chars)
+            .map(|(byte, _)| byte)
+            .unwrap_or(self.content.len())
     }
 
     fn select_to(&mut self, offset: usize, cx: &mut Context<Self>) {
@@ -478,12 +499,26 @@ impl Element for TextElement {
         let content = input.content.clone();
         let selected_range = input.selected_range.clone();
         let cursor = input.cursor_offset();
+        let masked = input.masked;
         let style = window.text_style();
 
         let (display_text, text_color) = if content.is_empty() {
             (input.placeholder.clone(), hsla(0., 0., 0.45, 1.))
+        } else if masked {
+            (
+                SharedString::from("•".repeat(content.chars().count())),
+                style.color,
+            )
         } else {
-            (content, style.color)
+            (content.clone(), style.color)
+        };
+
+        let to_display = |byte_idx: usize| -> usize {
+            if masked && !content.is_empty() {
+                content[..byte_idx.min(content.len())].chars().count() * '•'.len_utf8()
+            } else {
+                byte_idx
+            }
         };
 
         let run = TextRun {
@@ -526,7 +561,7 @@ impl Element for TextElement {
             .text_system()
             .shape_line(display_text, font_size, &runs, None);
 
-        let cursor_pos = line.x_for_index(cursor);
+        let cursor_pos = line.x_for_index(to_display(cursor));
         let (selection, cursor) = if selected_range.is_empty() {
             (
                 None,
@@ -543,11 +578,11 @@ impl Element for TextElement {
                 Some(fill(
                     Bounds::from_corners(
                         point(
-                            bounds.left() + line.x_for_index(selected_range.start),
+                            bounds.left() + line.x_for_index(to_display(selected_range.start)),
                             bounds.top(),
                         ),
                         point(
-                            bounds.left() + line.x_for_index(selected_range.end),
+                            bounds.left() + line.x_for_index(to_display(selected_range.end)),
                             bounds.bottom(),
                         ),
                     ),
