@@ -55,7 +55,7 @@ impl Root {
         let show_download = !frpc_path().exists();
         Self {
             server_addr: cx.new(|cx| {
-                TextInput::new(cx, cfg.server_addr.clone(), "服务器地址", false, false)
+                TextInput::new(cx, cfg.server_addr.clone(), "服务器地址", false, true)
             }),
             server_port: cx.new(|cx| {
                 TextInput::new(cx, cfg.server_port.to_string(), "7000", true, false)
@@ -381,7 +381,32 @@ impl Root {
                             .child(
                                 div()
                                     .flex_1()
-                                    .child(labelled("服务器地址", self.server_addr.clone())),
+                                    .flex()
+                                    .flex_row()
+                                    .gap_2()
+                                    .items_end()
+                                    .child(
+                                        div()
+                                            .flex_1()
+                                            .child(labelled("服务器地址", self.server_addr.clone())),
+                                    )
+                                    .child(
+                                        styled_button(
+                                            "eyeserver",
+                                            if self.server_addr.read(cx).masked {
+                                                "显示"
+                                            } else {
+                                                "隐藏"
+                                            },
+                                            0x3f3f46,
+                                            true,
+                                        )
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            let addr = this.server_addr.clone();
+                                            addr.update(cx, |input, cx| input.toggle_mask(cx));
+                                            cx.notify();
+                                        })),
+                                    ),
                             )
                             .child(
                                 div()
