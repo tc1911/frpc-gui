@@ -1,15 +1,9 @@
+use crate::TrayCmd;
+use image::GenericImageView;
 use ksni::blocking::TrayMethods;
 use ksni::menu::StandardItem;
-use image::GenericImageView;
-use std::sync::mpsc::Sender;
 use std::sync::LazyLock;
-
-#[derive(Debug, Clone, Copy)]
-pub enum Cmd {
-    StartAll,
-    StopAll,
-    Quit,
-}
+use std::sync::mpsc::Sender;
 
 static ICON: LazyLock<ksni::Icon> = LazyLock::new(|| {
     let img = image::load_from_memory_with_format(
@@ -34,7 +28,7 @@ pub struct TrayHandle {
 }
 
 pub struct Tray {
-    tx: Sender<Cmd>,
+    tx: Sender<TrayCmd>,
     running: usize,
 }
 
@@ -60,7 +54,7 @@ impl ksni::Tray for Tray {
             StandardItem {
                 label: "全部启动".into(),
                 activate: Box::new(|this: &mut Self| {
-                    let _ = this.tx.send(Cmd::StartAll);
+                    let _ = this.tx.send(TrayCmd::StartAll);
                 }),
                 ..Default::default()
             }
@@ -68,7 +62,7 @@ impl ksni::Tray for Tray {
             StandardItem {
                 label: "全部停止".into(),
                 activate: Box::new(|this: &mut Self| {
-                    let _ = this.tx.send(Cmd::StopAll);
+                    let _ = this.tx.send(TrayCmd::StopAll);
                 }),
                 ..Default::default()
             }
@@ -78,7 +72,7 @@ impl ksni::Tray for Tray {
                 label: "退出".into(),
                 icon_name: "application-exit".into(),
                 activate: Box::new(|this: &mut Self| {
-                    let _ = this.tx.send(Cmd::Quit);
+                    let _ = this.tx.send(TrayCmd::Quit);
                 }),
                 ..Default::default()
             }
@@ -87,7 +81,7 @@ impl ksni::Tray for Tray {
     }
 }
 
-pub fn spawn(tx: Sender<Cmd>) -> Option<TrayHandle> {
+pub fn spawn(tx: Sender<TrayCmd>) -> Option<TrayHandle> {
     let tray = Tray { tx, running: 0 };
     match tray.spawn() {
         Ok(handle) => Some(TrayHandle { _handle: handle }),

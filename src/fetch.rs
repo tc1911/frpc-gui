@@ -95,6 +95,8 @@ fn try_download(log: &Arc<Mutex<Vec<String>>>) -> Result<(), String> {
 }
 
 fn set_exec(p: &Path) -> Result<(), String> {
+    #[cfg(not(unix))]
+    let _ = p;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

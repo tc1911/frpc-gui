@@ -81,6 +81,7 @@ pub fn config_dir() -> PathBuf {
     }
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 pub fn data_dir() -> PathBuf {
     #[cfg(windows)]
     {
@@ -104,6 +105,7 @@ fn exe_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+#[cfg_attr(windows, allow(dead_code))]
 fn home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".into()))
 }

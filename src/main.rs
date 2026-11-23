@@ -6,6 +6,9 @@ mod text_input;
 #[cfg(target_os = "linux")]
 mod tray;
 
+#[cfg(windows)]
+mod tray_win;
+
 use config::{Auth, Config, Proxy, config_path, frpc_path};
 use gpui::prelude::*;
 use gpui::*;
@@ -15,6 +18,13 @@ use text_input::{
     Backspace, Copy, Cut, Delete, End, Home, Left, Paste, Right, SelectAll, SelectLeft,
     SelectRight, ShowCharacterPalette, TextInput,
 };
+
+#[derive(Clone, Copy, Debug)]
+pub enum TrayCmd {
+    StartAll,
+    StopAll,
+    Quit,
+}
 
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
@@ -34,14 +44,20 @@ struct Root {
     page: Page,
     saved: Config,
     dirty: bool,
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", windows))]
     tray: TrayState,
 }
 
 #[cfg(target_os = "linux")]
 struct TrayState {
-    rx: std::sync::mpsc::Receiver<tray::Cmd>,
+    rx: std::sync::mpsc::Receiver<TrayCmd>,
     _handle: Option<tray::TrayHandle>,
+}
+
+#[cfg(windows)]
+struct TrayState {
+    rx: std::sync::mpsc::Receiver<TrayCmd>,
+    _handle: Option<tray_win::TrayHandle>,
 }
 
 struct ProxyRow {
@@ -78,6 +94,15 @@ impl Root {
                 _handle: handle,
             }
         };
+        #[cfg(windows)]
+        let tray_state = {
+            let (tx, rx) = std::sync::mpsc::channel();
+            let handle = tray_win::spawn(tx);
+            TrayState {
+                rx,
+                _handle: handle,
+            }
+        };
         Self {
             server_addr: cx
                 .new(|cx| TextInput::new(cx, cfg.server_addr.clone(), "服务器地址", false, true)),
@@ -93,7 +118,7 @@ impl Root {
             page: Page::Home,
             saved: cfg.clone(),
             dirty: false,
-            #[cfg(target_os = "linux")]
+            #[cfg(any(target_os = "linux", windows))]
             tray: tray_state,
         }
     }
@@ -141,9 +166,9 @@ impl Root {
     fn pump_tray(&mut self, cx: &mut Context<Self>) {
         while let Ok(cmd) = self.tray.rx.try_recv() {
             match cmd {
-                tray::Cmd::StartAll => self.start_all(cx),
-                tray::Cmd::StopAll => self.stop_all(cx),
-                tray::Cmd::Quit => {
+                TrayCmd::StartAll => self.start_all(cx),
+                TrayCmd::StopAll => self.stop_all(cx),
+                TrayCmd::Quit => {
                     cx.quit();
                     return;
                 }
@@ -151,7 +176,21 @@ impl Root {
         }
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    fn pump_tray(&mut self, cx: &mut Context<Self>) {
+        while let Ok(cmd) = self.tray.rx.try_recv() {
+            match cmd {
+                TrayCmd::StartAll => self.start_all(cx),
+                TrayCmd::StopAll => self.stop_all(cx),
+                TrayCmd::Quit => {
+                    cx.quit();
+                    return;
+                }
+            }
+        }
+    }
+
+    #[cfg(not(any(target_os = "linux", windows)))]
     fn pump_tray(&mut self, _cx: &mut Context<Self>) {}
 
     fn start_one(&mut self, name: String, cx: &mut Context<Self>) {
