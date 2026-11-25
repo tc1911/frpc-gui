@@ -2,7 +2,7 @@
 # 在仓库根目录执行：./packaging/linux/build-deb.sh
 set -eu
 
-VERSION=${VERSION:-0.1.0}
+VERSION=${VERSION:-0.1.1}
 ARCH=${ARCH:-amd64}
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 OUT="$ROOT/target/deb"

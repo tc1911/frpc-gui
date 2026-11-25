@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           frpc-gui
-Version:        0.1.0
+Version:        0.1.1
 Release:        1
 Summary:        frpc 的图形前端（GPUI）
 License:        MIT

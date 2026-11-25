@@ -1,5 +1,5 @@
 #define MyAppName "frpc GUI"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.1.1"
 #define MyAppPublisher "tc191"
 #define MyAppExeName "frpc-gui.exe"
 #define MyAppId "{{8F31C1A2-4C6E-4E1B-9C2D-7A5B3E9D1C64}"
